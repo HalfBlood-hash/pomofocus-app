@@ -43,6 +43,7 @@ export interface UserProfile {
   email: string;
   avatar?: string;
   isLoggedIn: boolean;
+  token?: string;
 }
 
 export interface DailyReportLog {

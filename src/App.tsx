@@ -108,6 +108,67 @@ export function App() {
     localStorage.setItem('pomofocus_pomo_count', pomodoroCount.toString());
   }, [pomodoroCount]);
 
+  // Restore logged-in session and fetch latest data from database across systems on startup
+  useEffect(() => {
+    const token = localStorage.getItem('pomofocus_jwt_token');
+    if (!token) return;
+
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (payload && payload.user) {
+          setCurrentUser({
+            name: payload.user.name,
+            email: payload.user.email,
+            isLoggedIn: true,
+            token,
+          });
+          if (payload.data) {
+            if (payload.data.tasks && Array.isArray(payload.data.tasks) && payload.data.tasks.length > 0) {
+              setTasks(payload.data.tasks);
+              setActiveTaskId(payload.data.tasks[0].id);
+            }
+            if (payload.data.templates && Array.isArray(payload.data.templates)) {
+              setTemplates(payload.data.templates);
+            }
+            if (payload.data.settings) {
+              setSettings(payload.data.settings);
+            }
+            if (payload.data.pomodoroCount !== undefined) {
+              setPomodoroCount(payload.data.pomodoroCount);
+            }
+          }
+        }
+      })
+      .catch((err) => console.warn('Could not auto-sync profile from database:', err));
+  }, []);
+
+  // Multi-System Cloud Sync: automatically sync data to database whenever tasks, templates, or settings update
+  useEffect(() => {
+    const token = localStorage.getItem('pomofocus_jwt_token');
+    if (!token || !currentUser.isLoggedIn) return;
+
+    const timeout = setTimeout(() => {
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tasks,
+          templates,
+          settings,
+          pomodoroCount,
+        }),
+      }).catch((err) => console.warn('Background sync warning:', err));
+    }, 1000); // 1s debounce
+
+    return () => clearTimeout(timeout);
+  }, [tasks, templates, settings, pomodoroCount, currentUser.isLoggedIn]);
+
   // Active task helper
   const activeTask = tasks.find((t) => t.id === activeTaskId);
 
@@ -585,8 +646,27 @@ export function App() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         currentUser={currentUser}
-        onLogin={(profile) => setCurrentUser(profile)}
-        onLogout={() => setCurrentUser({ name: '', email: '', isLoggedIn: false })}
+        onLoginSuccess={(profile, syncedData) => {
+          setCurrentUser(profile);
+          if (syncedData) {
+            if (syncedData.tasks && Array.isArray(syncedData.tasks)) {
+              setTasks(syncedData.tasks);
+              if (syncedData.tasks.length > 0) setActiveTaskId(syncedData.tasks[0].id);
+            }
+            if (syncedData.templates && Array.isArray(syncedData.templates)) {
+              setTemplates(syncedData.templates);
+            }
+            if (syncedData.settings) {
+              setSettings(syncedData.settings);
+            }
+            if (syncedData.pomodoroCount !== undefined) {
+              setPomodoroCount(syncedData.pomodoroCount);
+            }
+          }
+        }}
+        onLogout={() => {
+          setCurrentUser({ name: '', email: '', isLoggedIn: false });
+        }}
       />
 
       <MusicPlayer
