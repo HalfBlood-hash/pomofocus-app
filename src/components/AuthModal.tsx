@@ -56,10 +56,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      let data: any = {};
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        data = { error: text || 'Server returned an invalid response' };
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Authentication failed');
+        throw new Error(data.error || 'Authentication failed. Please verify credentials.');
       }
 
       // Save token to localStorage
